@@ -40,7 +40,7 @@ input/配下の元資料（テキスト、PDF、画像等）を読み取り、�
 
 ## レイアウト一覧
 
-15種類のレイアウトから各スライドに最適なものを選択する。
+18種類のレイアウトから各スライドに最適なものを選択する。
 選択基準の詳細は [references/layout-selection-guide.md](references/layout-selection-guide.md) を参照。
 各レイアウトの完全な仕様は [references/layout-rules.md](references/layout-rules.md) を参照。
 
@@ -61,6 +61,9 @@ input/配下の元資料（テキスト、PDF、画像等）を読み取り、�
 | image_with_text | 画像＋テキスト | 白 |
 | chart | グラフ（bar/horizontal_bar/pie/line） | 白 |
 | cta | 行動喚起 | 薄グレー `#F5F5F5` |
+| timeline | ロードマップ・年表 | 白 |
+| thank_you | 終了スライド | 紺色 `#1E3A5F` |
+| matrix | 2x2マトリクス | 白 |
 
 ## slides.md記法
 
@@ -313,6 +316,48 @@ A. REST APIを提供しており、主要なシステムとの連携実績があ
 - 無料デモを申し込む
 ```
 
+### timeline - ロードマップ・年表
+
+```markdown
+<!-- layout: timeline -->
+## プロジェクトロードマップ
+### 3フェーズで段階的に展開する
+
+| 時期 | 内容 |
+|------|------|
+| 2024 Q1 | 基盤構築 |
+| 2024 Q2 | 機能開発 |
+| 2024 Q3 | 本番リリース |
+```
+
+### thank_you - 終了スライド
+
+```markdown
+<!-- layout: thank_you -->
+## ご清聴ありがとうございました
+### お問い合わせ: info@example.com
+```
+
+### matrix - 2x2マトリクス
+
+```markdown
+<!-- layout: matrix -->
+## SWOT分析
+### 自社の競争環境を整理した
+
+#### 強み (S)
+技術力とブランド認知度
+
+#### 弱み (W)
+営業体制の薄さ
+
+#### 機会 (O)
+市場拡大トレンド
+
+#### 脅威 (T)
+新規参入の増加
+```
+
 ## チャート自動判定
 
 chartレイアウトではデータの特徴に応じてチャートタイプを自動判定する:
@@ -410,6 +455,6 @@ python scripts/slide_generator_pptx.py --markdown-file output/slides.md --config
 
 - [ワークフロー詳細](references/workflow.md) - 7ステップの詳細手順
 - [レイアウト選択ガイド](references/layout-selection-guide.md) - コンテンツに応じたレイアウト選択
-- [レイアウト詳細仕様](references/layout-rules.md) - 15レイアウトの完全な記法と仕様
+- [レイアウト詳細仕様](references/layout-rules.md) - 18レイアウトの完全な記法と仕様
 - [文字数制限ルール](references/character-limits.md) - レイアウト別の文字数制限テーブル
 - [図形描画ヘルパー仕様](references/shape-helpers.md) - python-pptx図形描画の技術仕様

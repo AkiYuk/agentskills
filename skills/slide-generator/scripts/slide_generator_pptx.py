@@ -1,7 +1,7 @@
 """PowerPointスライド生成スクリプト
 
 slides.md形式のMarkdownファイルからPowerPoint（.pptx）ファイルを生成する。
-15種類のレイアウトに対応し、config.jsonで指定されたデザイン設定を適用する。
+18種類のレイアウトに対応し、config.jsonで指定されたデザイン設定を適用する。
 
 使い方:
     python slide_generator_pptx.py --markdown-file output/slides.md --config config.json
@@ -1657,6 +1657,258 @@ class ChartRenderer(BaseRenderer):
 
 
 # ====================================================================
+# TimelineRenderer
+# ====================================================================
+
+class TimelineRenderer(BaseRenderer):
+    """タイムライン・ロードマップレイアウトRenderer
+
+    横方向のタイムライン線にマーカーを配置し、時期ラベルと内容を表示する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """タイムラインスライドを描画"""
+        self.set_background_color(slide, config.bg_primary)
+
+        # タイトル・キーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        # 区切り線
+        self._render_separator_line(slide, config)
+
+        items = slide_data.items or []
+        if not items:
+            return
+
+        num = min(len(items), 5)
+        items = items[:num]
+
+        # タイムラインの中心Y座標
+        line_y = 3.8
+        # タイムライン水平線
+        line_margin = 1.0
+        line_width = self.CONTENT_WIDTH - line_margin * 2 + 1.0
+        self.add_horizontal_line(
+            slide,
+            left=Inches(self.CONTENT_LEFT + line_margin - 0.5),
+            top=Inches(line_y),
+            width=Inches(line_width),
+            color=config.gray_color,
+            thickness=2.0,
+        )
+
+        # 各マーカーの間隔を計算
+        usable_width = self.CONTENT_WIDTH - line_margin * 2
+        spacing = usable_width / (num - 1) if num > 1 else 0
+
+        for i, item in enumerate(items):
+            # マーカーのX座標（中心）
+            marker_cx = self.CONTENT_LEFT + line_margin + i * spacing
+            marker_size = 0.3
+
+            # 円形マーカー（アクセント色）
+            self.add_shape(
+                slide, MSO_SHAPE.OVAL,
+                Inches(marker_cx - marker_size / 2),
+                Inches(line_y - marker_size / 2 + 0.02),
+                Inches(marker_size), Inches(marker_size),
+                fill_color=config.accent_color,
+            )
+
+            # 時期ラベル（マーカーの上）
+            label_width = 1.8
+            self.add_text_box(
+                slide,
+                left=Inches(marker_cx - label_width / 2),
+                top=Inches(line_y - 1.0),
+                width=Inches(label_width),
+                height=Inches(0.5),
+                text=item.get("label", ""),
+                font_size=Pt(11),
+                font_color=config.primary_color,
+                bold=True,
+                alignment=PP_ALIGN.CENTER,
+                font_family=config.font_family,
+            )
+
+            # 内容テキスト（マーカーの下）
+            body_width = 2.0
+            self.add_text_box(
+                slide,
+                left=Inches(marker_cx - body_width / 2),
+                top=Inches(line_y + 0.5),
+                width=Inches(body_width),
+                height=Inches(1.5),
+                text=item.get("body", ""),
+                font_size=Pt(10),
+                font_color=config.text_primary,
+                alignment=PP_ALIGN.CENTER,
+                font_family=config.font_family,
+                line_spacing=1.3,
+            )
+
+
+# ====================================================================
+# ThankYouRenderer
+# ====================================================================
+
+class ThankYouRenderer(BaseRenderer):
+    """終了スライドレイアウトRenderer
+
+    紺色背景に白文字でメッセージを中央配置し、アクセント色の装飾線を添える。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """終了スライドを描画"""
+        # 背景: 紺色（titleと同系統）
+        self.set_background_color(slide, config.bg_dark)
+
+        # メインメッセージ: 36pt, bold, 白色, 中央揃え
+        self.add_text_box(
+            slide,
+            left=Inches(1.5),
+            top=Inches(2.2),
+            width=Inches(10.333),
+            height=Inches(1.2),
+            text=slide_data.title or "",
+            font_size=Pt(36),
+            font_color=config.text_light,
+            bold=True,
+            alignment=PP_ALIGN.CENTER,
+            font_family=config.font_family,
+        )
+
+        # アクセント色の水平装飾線
+        self.add_horizontal_line(
+            slide,
+            left=Inches(5.667),
+            top=Inches(3.6),
+            width=Inches(2.0),
+            color=config.accent_color,
+            thickness=3.0,
+        )
+
+        # サブテキスト: 16pt, 白色, 中央揃え（連絡先等）
+        if slide_data.subtitle:
+            self.add_text_box(
+                slide,
+                left=Inches(1.5),
+                top=Inches(4.0),
+                width=Inches(10.333),
+                height=Inches(0.8),
+                text=slide_data.subtitle,
+                font_size=Pt(16),
+                font_color=config.text_light,
+                alignment=PP_ALIGN.CENTER,
+                font_family=config.font_family,
+            )
+
+
+# ====================================================================
+# MatrixRenderer
+# ====================================================================
+
+class MatrixRenderer(BaseRenderer):
+    """2x2マトリクスレイアウトRenderer
+
+    SWOT分析やポジショニングマップ等、4象限で情報を整理する。
+    十字の区切り線で4つのセルに分割し、各セルにヘッダと本文を配置する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """2x2マトリクススライドを描画"""
+        self.set_background_color(slide, config.bg_primary)
+
+        # タイトル・キーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        # 区切り線
+        self._render_separator_line(slide, config)
+
+        columns = slide_data.columns or []
+        # 4象限に満たない場合は空で埋める
+        while len(columns) < 4:
+            columns.append({"heading": "", "body": ""})
+
+        # グリッド座標
+        grid_top = self.CONTENT_TOP + 0.1
+        grid_height = self.CONTENT_HEIGHT - 0.1
+        cell_width = (self.CONTENT_WIDTH - 0.3) / 2  # 中央のガター分を引く
+        cell_height = (grid_height - 0.3) / 2  # 中央のガター分を引く
+
+        # 十字の区切り線
+        center_x = self.CONTENT_LEFT + self.CONTENT_WIDTH / 2
+        center_y = grid_top + grid_height / 2
+
+        # 縦線
+        self.add_vertical_line(
+            slide,
+            left=Inches(center_x),
+            top=Inches(grid_top),
+            height=Inches(grid_height),
+            color="#CCCCCC",
+        )
+        # 横線
+        self.add_horizontal_line(
+            slide,
+            left=Inches(self.CONTENT_LEFT),
+            top=Inches(center_y),
+            width=Inches(self.CONTENT_WIDTH),
+            color="#CCCCCC",
+        )
+
+        # 4象限の配置: 左上→右上→左下→右下
+        positions = [
+            (self.CONTENT_LEFT, grid_top),                            # 左上
+            (self.CONTENT_LEFT + cell_width + 0.3, grid_top),         # 右上
+            (self.CONTENT_LEFT, grid_top + cell_height + 0.3),        # 左下
+            (self.CONTENT_LEFT + cell_width + 0.3, grid_top + cell_height + 0.3),  # 右下
+        ]
+
+        for i, (col_data, (px, py)) in enumerate(zip(columns[:4], positions)):
+            # ヘッダー
+            self.add_text_box(
+                slide,
+                left=Inches(px),
+                top=Inches(py),
+                width=Inches(cell_width),
+                height=Inches(0.4),
+                text=col_data.get("heading", ""),
+                font_size=Pt(14),
+                font_color=config.primary_color,
+                bold=True,
+                font_family=config.font_family,
+            )
+            # ヘッダー下の装飾線
+            self.add_horizontal_line(
+                slide,
+                left=Inches(px),
+                top=Inches(py + 0.45),
+                width=Inches(cell_width),
+                color=config.accent_color,
+                thickness=2.0,
+            )
+            # 本文
+            self.add_text_box(
+                slide,
+                left=Inches(px),
+                top=Inches(py + 0.55),
+                width=Inches(cell_width),
+                height=Inches(cell_height - 0.6),
+                text=col_data.get("body", ""),
+                font_size=Pt(11),
+                font_color=config.text_primary,
+                font_family=config.font_family,
+            )
+
+
+# ====================================================================
 # RENDERER_MAP
 # ====================================================================
 
@@ -1676,6 +1928,9 @@ RENDERER_MAP = {
     "quote": QuoteRenderer,
     "image_with_text": ImageWithTextRenderer,
     "chart": ChartRenderer,
+    "timeline": TimelineRenderer,
+    "thank_you": ThankYouRenderer,
+    "matrix": MatrixRenderer,
 }
 
 

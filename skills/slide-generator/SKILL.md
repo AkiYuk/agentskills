@@ -20,16 +20,17 @@ input/配下の元資料（テキスト、PDF、画像等）を読み取り、�
 
 ## ワークフロー概要
 
-6ステップで元資料からPowerPointを生成する。詳細は [references/workflow.md](references/workflow.md) を参照。
+7ステップで元資料からPowerPointを生成する。詳細は [references/workflow.md](references/workflow.md) を参照。
 
 | ステップ | 内容 | インプット | アウトプット |
 |---------|------|-----------|-------------|
 | 1. 目的確認 | ターゲット・ゴール・期待アクションを抽出 | input/元資料 | 目的定義 |
-| 2. 構成設計 | キーメッセージ抽出・論理構造選択 | 目的定義+元資料 | スライド構成案 |
-| 3. レイアウト選択 | 15パターンから最適レイアウトを割り当て | 構成案 | レイアウト割り当て |
-| 4. テキスト調整 | 文字数制限に合わせてテキストを調整 | 構成案+レイアウト | 調整済みテキスト |
-| 5. slides.md出力 | Markdown形式でスライドを記述 | 調整済みテキスト | output/slides.md |
-| 6. PowerPoint生成 | CLIコマンドでPPTXを生成 | slides.md+config.json | output/*.pptx |
+| 2. デザイン確認 | フォント・カラーの変更希望をヒアリング | config.json | output/config.json（変更時のみ） |
+| 3. 構成設計 | キーメッセージ抽出・論理構造選択 | 目的定義+元資料 | スライド構成案 |
+| 4. レイアウト選択 | 15パターンから最適レイアウトを割り当て | 構成案 | レイアウト割り当て |
+| 5. テキスト調整 | 文字数制限に合わせてテキストを調整 | 構成案+レイアウト | 調整済みテキスト |
+| 6. slides.md出力 | Markdown形式でスライドを記述 | 調整済みテキスト | output/slides.md |
+| 7. PowerPoint生成 | CLIコマンドでPPTXを生成 | slides.md+config.json | output/*.pptx |
 
 論理構造は以下の4パターンから選択する:
 - **PREP**: 結論→理由→具体例→結論（汎用的）
@@ -407,7 +408,7 @@ python scripts/slide_generator_pptx.py --markdown-file output/slides.md --config
 
 ## リファレンス
 
-- [ワークフロー詳細](references/workflow.md) - 6ステップの詳細手順
+- [ワークフロー詳細](references/workflow.md) - 7ステップの詳細手順
 - [レイアウト選択ガイド](references/layout-selection-guide.md) - コンテンツに応じたレイアウト選択
 - [レイアウト詳細仕様](references/layout-rules.md) - 15レイアウトの完全な記法と仕様
 - [文字数制限ルール](references/character-limits.md) - レイアウト別の文字数制限テーブル

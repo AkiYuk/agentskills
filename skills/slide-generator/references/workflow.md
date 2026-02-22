@@ -1,12 +1,12 @@
 # ワークフロー詳細
 
-本ドキュメントはslide-generatorスキルの6ステップワークフローの詳細手順を定義する。
+本ドキュメントはslide-generatorスキルの7ステップワークフローの詳細手順を定義する。
 各ステップのインプット・アウトプット・作業内容を記載する。
 
 ## 全体フロー
 
 ```
-input/元資料 → [1.目的確認] → [2.構成設計] → [3.レイアウト選択] → [4.テキスト調整] → [5.slides.md出力] → [6.PowerPoint生成] → output/*.pptx
+input/元資料 → [1.目的確認] → [2.デザイン確認] → [3.構成設計] → [4.レイアウト選択] → [5.テキスト調整] → [6.slides.md出力] → [7.PowerPoint生成] → output/*.pptx
 ```
 
 各ステップは順序依存であり、前ステップのアウトプットが次ステップのインプットとなる。
@@ -31,7 +31,36 @@ input/元資料 → [1.目的確認] → [2.構成設計] → [3.レイアウト
 
 ---
 
-## ステップ2: 構成設計
+## ステップ2: デザイン確認
+
+### インプット
+- `config.json`（デフォルトデザイン設定）
+
+### 作業内容
+1. 現在のデザイン設定をユーザーに提示する:
+   - **フォント**: `Meiryo UI`
+   - **プライマリカラー**: `#1E3A5F`（紺色）
+   - **アクセントカラー**: `#3AA899`（ティール）
+2. 変更希望があるか確認する
+3. ユーザーの回答に応じて分岐する:
+   - **変更なし（デフォルトでOK）**: 何もせず次のステップへ進む
+   - **変更あり**: `config.json` をベースに、変更対象の項目のみ上書きした `output/config.json` を生成する
+
+### カスタムconfig生成ルール
+- ベースは `config.json` の全内容をコピーする
+- ユーザーが指定した項目のみ上書きする
+- 指定可能な項目:
+  - `font.family`: フォントファミリー
+  - `palette.primary`: プライマリカラー（表紙背景、セクション区切り等に使用）
+  - `palette.accent`: アクセントカラー（強調表示、チャートの強調色等に使用）
+- 上書き例: ユーザーが「プライマリカラーを `#2D5A27` にしたい」と言った場合、`palette.primary` のみ変更し他はそのまま
+
+### アウトプット
+- `output/config.json`（変更がある場合のみ）
+
+---
+
+## ステップ3: 構成設計
 
 ### インプット
 - ステップ1のターゲット・ゴール・期待アクション
@@ -53,10 +82,10 @@ input/元資料 → [1.目的確認] → [2.構成設計] → [3.レイアウト
 
 ---
 
-## ステップ3: レイアウト選択
+## ステップ4: レイアウト選択
 
 ### インプット
-- ステップ2のスライド構成案
+- ステップ3のスライド構成案
 
 ### 作業内容
 1. 各スライドの内容に基づき、15パターンから最適なレイアウトを割り当てる
@@ -71,11 +100,11 @@ input/元資料 → [1.目的確認] → [2.構成設計] → [3.レイアウト
 
 ---
 
-## ステップ4: テキスト調整
+## ステップ5: テキスト調整
 
 ### インプット
-- ステップ2の構成案
-- ステップ3のレイアウト割り当て
+- ステップ3の構成案
+- ステップ4のレイアウト割り当て
 
 ### 作業内容
 1. [character-limits.md](character-limits.md) に基づき、各要素の文字数制限を確認する
@@ -93,11 +122,11 @@ input/元資料 → [1.目的確認] → [2.構成設計] → [3.レイアウト
 
 ---
 
-## ステップ5: slides.md出力
+## ステップ6: slides.md出力
 
 ### インプット
-- ステップ4の調整済みテキスト
-- ステップ3のレイアウト割り当て
+- ステップ5の調整済みテキスト
+- ステップ4のレイアウト割り当て
 
 ### 作業内容
 1. [layout-rules.md](layout-rules.md) の記法に従い、Markdown形式でスライドを記述する
@@ -110,23 +139,27 @@ input/元資料 → [1.目的確認] → [2.構成設計] → [3.レイアウト
 
 ---
 
-## ステップ6: PowerPoint生成
+## ステップ7: PowerPoint生成
 
 ### インプット
 - `output/slides.md`
-- `config.json`
+- `config.json`（デフォルト）または `output/config.json`（ステップ2で生成された場合）
 - テンプレートPPTX（オプション）
 
 ### 作業内容
-1. 以下のCLIコマンドでPPTXを生成する:
+1. `output/config.json` が存在する場合（ステップ2でカスタム設定を生成した場合）はそちらを使用する:
+   ```
+   python scripts/slide_generator_pptx.py --markdown-file output/slides.md --config output/config.json
+   ```
+2. `output/config.json` が存在しない場合（デフォルト設定のまま）はデフォルトのconfig.jsonを使用する:
    ```
    python scripts/slide_generator_pptx.py --markdown-file output/slides.md --config config.json
    ```
-2. テンプレートを指定する場合:
+3. テンプレートを指定する場合:
    ```
    python scripts/slide_generator_pptx.py --markdown-file output/slides.md --config config.json --template assets/template.pptx
    ```
-3. 出力ディレクトリを変更する場合:
+4. 出力ディレクトリを変更する場合:
    ```
    python scripts/slide_generator_pptx.py --markdown-file output/slides.md --config config.json --output-dir my_output
    ```

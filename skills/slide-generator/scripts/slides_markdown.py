@@ -34,7 +34,7 @@ VALID_LAYOUTS = frozenset([
     "title", "section", "toc", "bullet_points", "numbered_list",
     "two_column", "three_column", "four_column", "metrics",
     "quote", "faq", "comparison_table", "image_with_text",
-    "chart", "cta",
+    "chart", "cta", "timeline", "thank_you", "matrix",
 ])
 
 # デフォルトレイアウト
@@ -80,6 +80,9 @@ CHARACTER_LIMITS: dict[str, list[tuple[str, int]]] = {
     "image_with_text": [("タイトル", 25), ("キーメッセージ", 40), ("説明", 100)],
     "chart": [("タイトル", 25), ("キーメッセージ", 40), ("ラベル", 10)],
     "cta": [("メッセージ", 20), ("説明", 40), ("ボタン", 15)],
+    "timeline": [("タイトル", 25), ("キーメッセージ", 40), ("時期ラベル", 10), ("内容", 30)],
+    "thank_you": [("メッセージ", 25), ("サブテキスト", 50)],
+    "matrix": [("タイトル", 25), ("キーメッセージ", 40), ("カラム見出し", 8), ("カラム本文", 60)],
 }
 
 # Markdown記法を除去するための正規表現
@@ -252,6 +255,12 @@ def _get_texts_for_field(slide: SlideContent, field_name: str) -> list[str]:
         return []
     elif field_name == "ボタン":
         return [slide.cta_button] if slide.cta_button else []
+    elif field_name == "時期ラベル":
+        return [item.get("label", "") for item in slide.items if item.get("label")]
+    elif field_name == "内容":
+        return [item.get("body", "") for item in slide.items if item.get("body")]
+    elif field_name == "サブテキスト":
+        return [slide.subtitle] if slide.subtitle else []
     elif field_name == "ラベル" and layout == "chart":
         if slide.chart:
             return list(slide.chart.labels)
@@ -355,6 +364,12 @@ class SlidesMarkdownParser:
                 return self._parse_chart(content_lines, chart_type_explicit)
             elif layout == "cta":
                 return self._parse_cta(content_lines)
+            elif layout == "timeline":
+                return self._parse_timeline(content_lines)
+            elif layout == "thank_you":
+                return self._parse_thank_you(content_lines)
+            elif layout == "matrix":
+                return self._parse_matrix(content_lines)
         except Exception as e:
             logger.warning(f"スライドのパース中にエラーが発生しました: {e}")
             return SlideContent(layout=layout)
@@ -789,6 +804,69 @@ class SlidesMarkdownParser:
 
         return SlideContent(layout="cta", title=title, subtitle=subtitle, cta_button=cta_button)
 
+    def _parse_timeline(self, lines: list[str]) -> SlideContent:
+        """timelineレイアウトのパース
+
+        テーブル形式（時期 | 内容）からタイムラインデータを構築する。
+        """
+        title = self._extract_h2(lines)
+        subtitle = self._extract_h3(lines)
+        items = []
+
+        table = self._parse_markdown_table(lines)
+        if table and len(table) > 1:
+            for row in table[1:]:
+                if len(row) >= 2:
+                    items.append({"label": row[0], "body": row[1]})
+
+        return SlideContent(layout="timeline", title=title, subtitle=subtitle, items=items)
+
+    def _parse_thank_you(self, lines: list[str]) -> SlideContent:
+        """thank_youレイアウトのパース"""
+        title = self._extract_h2(lines)
+        subtitle = self._extract_h3(lines)
+        return SlideContent(layout="thank_you", title=title, subtitle=subtitle)
+
+    def _parse_matrix(self, lines: list[str]) -> SlideContent:
+        """matrixレイアウトのパース
+
+        ####見出しとその後の本文から2x2マトリクスデータを構築する。
+        パース処理はカラムレイアウトと同一だが、レイアウト名をmatrixにする。
+        """
+        title = self._extract_h2(lines)
+        subtitle = self._extract_h3(lines)
+
+        columns = []
+        current_heading = None
+        current_body_lines: list[str] = []
+
+        for line in lines:
+            stripped = line.strip()
+            m = H4_PATTERN.match(stripped)
+            if m:
+                if current_heading is not None:
+                    columns.append({
+                        "heading": current_heading,
+                        "body": '\n'.join(current_body_lines).strip()
+                    })
+                current_heading = m.group(1).strip()
+                current_body_lines = []
+                continue
+
+            if current_heading is not None:
+                if (not H1_PATTERN.match(stripped) and
+                    not H2_PATTERN.match(stripped) and
+                    not H3_PATTERN.match(stripped)):
+                    current_body_lines.append(stripped)
+
+        if current_heading is not None:
+            columns.append({
+                "heading": current_heading,
+                "body": '\n'.join(current_body_lines).strip()
+            })
+
+        return SlideContent(layout="matrix", title=title, subtitle=subtitle, columns=columns)
+
     # ----------------------------------------------------------------
     # チャート関連
     # ----------------------------------------------------------------
@@ -967,6 +1045,12 @@ class SlidesMarkdownSerializer:
             return self._serialize_chart(slide)
         elif layout == "cta":
             return self._serialize_cta(slide)
+        elif layout == "timeline":
+            return self._serialize_timeline(slide)
+        elif layout == "thank_you":
+            return self._serialize_thank_you(slide)
+        elif layout == "matrix":
+            return self._serialize_matrix(slide)
         else:
             # フォールバック: bullet_points形式で出力
             return self._serialize_bullet_points(slide)
@@ -1156,6 +1240,49 @@ class SlidesMarkdownSerializer:
             parts.append("")
             parts.append(f"[{slide.cta_button}]")
         return '\n'.join(parts)
+
+    def _serialize_timeline(self, slide: SlideContent) -> str:
+        """timelineレイアウトのシリアライズ"""
+        parts = ["<!-- layout: timeline -->"]
+        if slide.title:
+            parts.append(f"## {slide.title}")
+        if slide.subtitle:
+            parts.append(f"### {slide.subtitle}")
+        if slide.items:
+            parts.append("")
+            # テーブル形式で出力
+            table = [["時期", "内容"]]
+            for item in slide.items:
+                table.append([item.get("label", ""), item.get("body", "")])
+            parts.append(self._table_to_markdown(table))
+        return '\n'.join(parts)
+
+    def _serialize_thank_you(self, slide: SlideContent) -> str:
+        """thank_youレイアウトのシリアライズ"""
+        parts = ["<!-- layout: thank_you -->"]
+        if slide.title:
+            parts.append(f"## {slide.title}")
+        if slide.subtitle:
+            parts.append(f"### {slide.subtitle}")
+        return '\n'.join(parts)
+
+    def _serialize_matrix(self, slide: SlideContent) -> str:
+        """matrixレイアウトのシリアライズ"""
+        parts = ["<!-- layout: matrix -->"]
+        if slide.title:
+            parts.append(f"## {slide.title}")
+        if slide.subtitle:
+            parts.append(f"### {slide.subtitle}")
+        if slide.columns:
+            parts.append("")
+            for col in slide.columns:
+                heading = col.get('heading', '')
+                body = col.get('body', '')
+                parts.append(f"#### {heading}")
+                if body:
+                    parts.append(body)
+                parts.append("")
+        return '\n'.join(parts).rstrip()
 
     # ----------------------------------------------------------------
     # ヘルパー

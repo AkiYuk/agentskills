@@ -17,8 +17,12 @@ import os
 import sys
 from pathlib import Path
 
+from lxml.etree import SubElement, QName
+
 from pptx import Presentation as PptxPresentation
+from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION, XL_MARKER_STYLE
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
@@ -92,6 +96,16 @@ class DesignConfig:
     def bg_secondary(self) -> str:
         """背景色 セカンダリ (#F5F5F5)"""
         return self.palette.get("background", {}).get("secondary", "#F5F5F5")
+
+    @property
+    def gray_color(self) -> str:
+        """グレー (#999999)"""
+        return self.palette.get("gray", "#999999")
+
+    @property
+    def chart_line_color_3(self) -> str:
+        """チャート折れ線3系列目の色 (#EDB120)"""
+        return self.palette.get("chart", {}).get("line_color_3", "#EDB120")
 
     @property
     def bg_dark(self) -> str:
@@ -1200,6 +1214,449 @@ class ImageWithTextRenderer(BaseRenderer):
 
 
 # ====================================================================
+# ShapeHelpers
+# ====================================================================
+
+# OOXML名前空間
+_NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_NS_C = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+
+
+class ShapeHelpers:
+    """python-pptxのAPIでは表現できないデザインをOOXML直接操作で実現するヘルパー"""
+
+    @staticmethod
+    def set_bar_shape_rounded(chart) -> None:
+        """バーの形状を角丸に設定する（OOXML操作）
+
+        各系列の<c:spPr>に<a:prstGeom prst="roundRect"/>を追加する。
+        """
+        chart_elem = chart.element
+        # barChart または bar3DChart 内の ser 要素を取得
+        for tag in ("barChart", "bar3DChart"):
+            for ser in chart_elem.iter(QName(_NS_C, "ser")):
+                # spPr要素を取得または作成
+                sp_pr = ser.find(QName(_NS_C, "spPr"))
+                if sp_pr is None:
+                    sp_pr = ser.find(QName(_NS_A, "spPr"))
+                if sp_pr is None:
+                    sp_pr = SubElement(ser, QName(_NS_A, "spPr"))
+                # 既存のprstGeomを除去
+                for existing in sp_pr.findall(QName(_NS_A, "prstGeom")):
+                    sp_pr.remove(existing)
+                # 角丸矩形を設定
+                prst_geom = SubElement(sp_pr, QName(_NS_A, "prstGeom"))
+                prst_geom.set("prst", "roundRect")
+
+    @staticmethod
+    def set_gridline_dashed(axis) -> None:
+        """軸のグリッド線を破線スタイル・#E5E5E5に設定する（OOXML操作）"""
+        # メジャーグリッド線を有効化
+        axis.has_major_gridlines = True
+
+        # 軸XML要素からmajorGridlinesを取得
+        axis_elem = axis._element
+        gridlines_elem = axis_elem.find(QName(_NS_C, "majorGridlines"))
+        if gridlines_elem is None:
+            return
+
+        # spPrを取得または作成
+        sp_pr = gridlines_elem.find(QName(_NS_C, "spPr"))
+        if sp_pr is None:
+            sp_pr = gridlines_elem.find(QName(_NS_A, "spPr"))
+        if sp_pr is None:
+            sp_pr = SubElement(gridlines_elem, QName(_NS_A, "spPr"))
+
+        # 既存のlnを除去
+        for existing_ln in sp_pr.findall(QName(_NS_A, "ln")):
+            sp_pr.remove(existing_ln)
+
+        # ln要素を作成
+        ln = SubElement(sp_pr, QName(_NS_A, "ln"))
+
+        # 色を設定（#E5E5E5）
+        solid_fill = SubElement(ln, QName(_NS_A, "solidFill"))
+        srgb_clr = SubElement(solid_fill, QName(_NS_A, "srgbClr"))
+        srgb_clr.set("val", "E5E5E5")
+
+        # 破線スタイルを設定
+        prst_dash = SubElement(ln, QName(_NS_A, "prstDash"))
+        prst_dash.set("val", "dash")
+
+    @staticmethod
+    def set_line_marker(series, color_hex: str, marker_size: int = 8) -> None:
+        """折れ線グラフのマーカーを設定する（APIとOOXML併用）
+
+        円形マーカー、白塗り、枠線は系列色と同色・1.5pt。
+        """
+        # マーカースタイルとサイズ（API）
+        series.marker.style = XL_MARKER_STYLE.CIRCLE
+        series.marker.size = marker_size
+
+        # 白塗り
+        series.marker.format.fill.solid()
+        series.marker.format.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+        # 枠線色
+        color_hex_clean = color_hex.lstrip("#")
+        series.marker.format.line.color.rgb = RGBColor.from_string(color_hex_clean)
+        series.marker.format.line.width = Pt(1.5)
+
+    @staticmethod
+    def set_bar_color(chart, series_index: int, point_index: int, color_hex: str) -> None:
+        """個別のバーポイントの色を設定する"""
+        color_hex_clean = color_hex.lstrip("#")
+        point = chart.series[series_index].points[point_index]
+        point.format.fill.solid()
+        point.format.fill.fore_color.rgb = RGBColor.from_string(color_hex_clean)
+
+    @staticmethod
+    def remove_chart_border(chart) -> None:
+        """チャートのプロットエリア枠線を非表示にする（OOXML操作）"""
+        chart_elem = chart.element
+        plot_area = chart_elem.find(QName(_NS_C, "plotArea"))
+        if plot_area is None:
+            return
+        # spPrを取得または作成
+        sp_pr = plot_area.find(QName(_NS_C, "spPr"))
+        if sp_pr is None:
+            sp_pr = plot_area.find(QName(_NS_A, "spPr"))
+        if sp_pr is None:
+            sp_pr = SubElement(plot_area, QName(_NS_A, "spPr"))
+        # 既存のlnを除去
+        for existing_ln in sp_pr.findall(QName(_NS_A, "ln")):
+            sp_pr.remove(existing_ln)
+        # noFillの枠線を設定
+        ln = SubElement(sp_pr, QName(_NS_A, "ln"))
+        SubElement(ln, QName(_NS_A, "noFill"))
+
+
+# ====================================================================
+# ChartRenderer
+# ====================================================================
+
+class ChartRenderer(BaseRenderer):
+    """チャートレイアウト（横棒・縦棒・折れ線・100%積み上げ棒）のRenderer"""
+
+    # チャート配置領域
+    CHART_LEFT = 0.8
+    CHART_TOP = 2.0
+    CHART_WIDTH = 11.5
+    CHART_HEIGHT = 5.0
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """chart_typeに応じてサブメソッドにディスパッチする"""
+        # タイトル・キーメッセージはBaseRendererの共通処理
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        chart_data = slide_data.chart
+        if chart_data is None:
+            return
+
+        chart_type = chart_data.chart_type
+        if chart_type == "horizontal_bar":
+            self._render_horizontal_bar(slide, slide_data, config)
+        elif chart_type == "bar":
+            self._render_bar(slide, slide_data, config)
+        elif chart_type == "line":
+            self._render_line(slide, slide_data, config)
+        elif chart_type == "pie":
+            self._render_pie(slide, slide_data, config)
+
+    def _render_horizontal_bar(self, slide, slide_data: SlideContent,
+                                config: DesignConfig) -> None:
+        """横棒グラフを描画する"""
+        chart_data = slide_data.chart
+
+        # CategoryChartDataを作成
+        cd = CategoryChartData()
+        cd.categories = chart_data.labels
+        # 単一系列（最初の系列のみ使用）
+        series_info = chart_data.series[0] if chart_data.series else {"name": "", "values": []}
+        cd.add_series(series_info["name"], series_info["values"])
+
+        # チャートを追加
+        chart_frame = slide.shapes.add_chart(
+            XL_CHART_TYPE.BAR_CLUSTERED,
+            Inches(self.CHART_LEFT), Inches(self.CHART_TOP),
+            Inches(self.CHART_WIDTH), Inches(self.CHART_HEIGHT),
+            cd
+        )
+        chart = chart_frame.chart
+
+        # 角丸バー
+        ShapeHelpers.set_bar_shape_rounded(chart)
+
+        # バーの色設定（通常=グレー、太字ラベル=アクセント色）
+        num_points = len(chart_data.labels)
+        for i in range(num_points):
+            if i in chart_data.highlight_indices:
+                ShapeHelpers.set_bar_color(chart, 0, i, config.accent_color)
+            else:
+                ShapeHelpers.set_bar_color(chart, 0, i, config.gray_color)
+
+        # 値軸（横軸）を非表示
+        chart.value_axis.visible = False
+
+        # カテゴリ軸（縦軸）のフォント設定
+        cat_axis = chart.category_axis
+        cat_axis.tick_labels.font.size = Pt(10)
+        cat_axis.tick_labels.font.color.rgb = RGBColor.from_string(
+            config.text_primary.lstrip("#"))
+        cat_axis.tick_labels.font.name = config.font_family
+
+        # 破線グリッド線
+        ShapeHelpers.set_gridline_dashed(chart.value_axis)
+
+        # データラベル
+        plot = chart.plots[0]
+        plot.has_data_labels = True
+        data_labels = plot.data_labels
+        data_labels.font.size = Pt(9)
+        data_labels.font.name = config.font_family
+        data_labels.font.color.rgb = RGBColor.from_string(
+            config.text_primary.lstrip("#"))
+        data_labels.number_format = '0'
+        data_labels.show_value = True
+
+        # 凡例非表示
+        chart.has_legend = False
+
+        # プロットエリア枠線非表示
+        ShapeHelpers.remove_chart_border(chart)
+
+    def _render_bar(self, slide, slide_data: SlideContent,
+                     config: DesignConfig) -> None:
+        """縦棒グラフを描画する"""
+        chart_data = slide_data.chart
+
+        # CategoryChartDataを作成
+        cd = CategoryChartData()
+        cd.categories = chart_data.labels
+        series_info = chart_data.series[0] if chart_data.series else {"name": "", "values": []}
+        cd.add_series(series_info["name"], series_info["values"])
+
+        # チャートを追加
+        chart_frame = slide.shapes.add_chart(
+            XL_CHART_TYPE.COLUMN_CLUSTERED,
+            Inches(self.CHART_LEFT), Inches(self.CHART_TOP),
+            Inches(self.CHART_WIDTH), Inches(self.CHART_HEIGHT),
+            cd
+        )
+        chart = chart_frame.chart
+
+        # 角丸バー
+        ShapeHelpers.set_bar_shape_rounded(chart)
+
+        # バーの色設定（通常=グレー、太字ラベル=アクセント色）
+        num_points = len(chart_data.labels)
+        for i in range(num_points):
+            if i in chart_data.highlight_indices:
+                ShapeHelpers.set_bar_color(chart, 0, i, config.accent_color)
+            else:
+                ShapeHelpers.set_bar_color(chart, 0, i, config.gray_color)
+
+        # カテゴリ軸（横軸）のフォント設定
+        cat_axis = chart.category_axis
+        cat_axis.tick_labels.font.size = Pt(10)
+        cat_axis.tick_labels.font.color.rgb = RGBColor.from_string(
+            config.text_primary.lstrip("#"))
+        cat_axis.tick_labels.font.name = config.font_family
+
+        # 値軸（縦軸）のフォント設定
+        val_axis = chart.value_axis
+        val_axis.tick_labels.font.size = Pt(9)
+        val_axis.tick_labels.font.color.rgb = RGBColor.from_string(
+            config.text_secondary.lstrip("#"))
+        val_axis.tick_labels.font.name = config.font_family
+
+        # 破線グリッド線（値軸のメジャーグリッド線）
+        ShapeHelpers.set_gridline_dashed(chart.value_axis)
+
+        # データラベル（バー上部に値を表示）
+        plot = chart.plots[0]
+        plot.has_data_labels = True
+        data_labels = plot.data_labels
+        data_labels.font.size = Pt(9)
+        data_labels.font.name = config.font_family
+        data_labels.font.color.rgb = RGBColor.from_string(
+            config.text_primary.lstrip("#"))
+        data_labels.number_format = '0'
+        data_labels.show_value = True
+        data_labels.label_position = XL_LABEL_POSITION.OUTSIDE_END
+
+        # 凡例非表示
+        chart.has_legend = False
+
+        # プロットエリア枠線非表示
+        ShapeHelpers.remove_chart_border(chart)
+
+    def _render_line(self, slide, slide_data: SlideContent,
+                      config: DesignConfig) -> None:
+        """折れ線グラフを描画する"""
+        chart_data = slide_data.chart
+
+        # CategoryChartDataを作成（複数系列対応）
+        cd = CategoryChartData()
+        cd.categories = chart_data.labels
+        for s in chart_data.series:
+            cd.add_series(s["name"], s["values"])
+
+        # チャートを追加
+        chart_frame = slide.shapes.add_chart(
+            XL_CHART_TYPE.LINE_MARKERS,
+            Inches(self.CHART_LEFT), Inches(self.CHART_TOP),
+            Inches(self.CHART_WIDTH), Inches(self.CHART_HEIGHT),
+            cd
+        )
+        chart = chart_frame.chart
+
+        # 系列ごとの色設定
+        line_colors = [
+            config.primary_color,      # 系列1: primary (#1E3A5F)
+            config.accent_color,       # 系列2: accent (#3AA899)
+            config.chart_line_color_3,  # 系列3: line_color_3 (#EDB120)
+            config.secondary_color,    # 系列4: secondary (#4A6FA5)
+        ]
+
+        for idx, series in enumerate(chart.series):
+            # 色の決定
+            if idx < len(line_colors):
+                color_hex = line_colors[idx]
+            else:
+                color_hex = config.secondary_color
+            color_hex_clean = color_hex.lstrip("#")
+
+            # 線の太さと色
+            series.format.line.width = Pt(2.5)
+            series.format.line.color.rgb = RGBColor.from_string(color_hex_clean)
+
+            # マーカー設定
+            ShapeHelpers.set_line_marker(series, color_hex, marker_size=8)
+
+        # カテゴリ軸のフォント設定
+        cat_axis = chart.category_axis
+        cat_axis.tick_labels.font.size = Pt(10)
+        cat_axis.tick_labels.font.color.rgb = RGBColor.from_string(
+            config.text_primary.lstrip("#"))
+        cat_axis.tick_labels.font.name = config.font_family
+
+        # 値軸のフォント設定
+        val_axis = chart.value_axis
+        val_axis.tick_labels.font.size = Pt(9)
+        val_axis.tick_labels.font.color.rgb = RGBColor.from_string(
+            config.text_secondary.lstrip("#"))
+        val_axis.tick_labels.font.name = config.font_family
+
+        # 破線グリッド線（値軸のメジャーグリッド線）
+        ShapeHelpers.set_gridline_dashed(chart.value_axis)
+
+        # 凡例（系列が2つ以上の場合にチャート下部に表示）
+        if len(chart_data.series) >= 2:
+            chart.has_legend = True
+            chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+            chart.legend.include_in_layout = False
+            chart.legend.font.size = Pt(9)
+            chart.legend.font.name = config.font_family
+        else:
+            chart.has_legend = False
+
+        # プロットエリア枠線非表示
+        ShapeHelpers.remove_chart_border(chart)
+
+    def _render_pie(self, slide, slide_data: SlideContent,
+                     config: DesignConfig) -> None:
+        """100%積み上げ棒グラフ（pieタイプ）を描画する
+
+        各ラベルを系列として扱い、1つの固定カテゴリに対して積み上げる。
+        """
+        chart_data = slide_data.chart
+
+        # 色パレット（primary, accent, secondary, gray の順）
+        base_colors = [
+            config.primary_color,
+            config.accent_color,
+            config.secondary_color,
+            config.gray_color,
+        ]
+
+        labels = chart_data.labels
+        values = chart_data.series[0]["values"] if chart_data.series else []
+        highlight_set = set(chart_data.highlight_indices)
+
+        # 色割り当て: 太字ラベルにはアクセント色を優先
+        series_colors = []
+        non_highlight_color_idx = 0
+        # 太字ラベル以外に使う色リスト（accentを除外）
+        non_highlight_colors = [c for c in base_colors if c != config.accent_color]
+
+        for i in range(len(labels)):
+            if i in highlight_set:
+                series_colors.append(config.accent_color)
+            else:
+                color = non_highlight_colors[non_highlight_color_idx % len(non_highlight_colors)]
+                series_colors.append(color)
+                non_highlight_color_idx += 1
+
+        # CategoryChartDataを作成
+        # カテゴリ=固定1項目、系列=各データ項目
+        cd = CategoryChartData()
+        cd.categories = [""]  # 固定1カテゴリ
+        for i, label in enumerate(labels):
+            val = values[i] if i < len(values) else 0
+            cd.add_series(label, [val])
+
+        # チャートを追加
+        chart_frame = slide.shapes.add_chart(
+            XL_CHART_TYPE.BAR_STACKED_100,
+            Inches(self.CHART_LEFT), Inches(self.CHART_TOP),
+            Inches(self.CHART_WIDTH), Inches(self.CHART_HEIGHT),
+            cd
+        )
+        chart = chart_frame.chart
+
+        # 各系列の色を設定
+        for idx, series in enumerate(chart.series):
+            color_hex = series_colors[idx] if idx < len(series_colors) else config.gray_color
+            series.format.fill.solid()
+            series.format.fill.fore_color.rgb = RGBColor.from_string(
+                color_hex.lstrip("#"))
+
+        # ギャップ幅の縮小
+        chart.plots[0].gap_width = 50
+
+        # カテゴリ軸・値軸を非表示
+        chart.category_axis.visible = False
+        chart.value_axis.visible = False
+
+        # データラベル: 各系列のポイントに%値を表示（白色、10pt）
+        plot = chart.plots[0]
+        plot.has_data_labels = True
+        data_labels = plot.data_labels
+        data_labels.font.size = Pt(10)
+        data_labels.font.name = config.font_family
+        data_labels.font.color.rgb = RGBColor.from_string(
+            config.text_light.lstrip("#"))
+        data_labels.number_format = '0"%"'
+        data_labels.show_value = True
+        data_labels.show_category_name = False
+        data_labels.show_series_name = False
+
+        # 凡例（チャート下部に表示）
+        chart.has_legend = True
+        chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+        chart.legend.include_in_layout = False
+        chart.legend.font.size = Pt(9)
+        chart.legend.font.name = config.font_family
+
+        # プロットエリア枠線非表示
+        ShapeHelpers.remove_chart_border(chart)
+
+
+# ====================================================================
 # RENDERER_MAP
 # ====================================================================
 
@@ -1218,6 +1675,7 @@ RENDERER_MAP = {
     "faq": FaqRenderer,
     "quote": QuoteRenderer,
     "image_with_text": ImageWithTextRenderer,
+    "chart": ChartRenderer,
 }
 
 

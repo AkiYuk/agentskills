@@ -896,7 +896,7 @@ class SlidesMarkdownParser:
         """テキストから数値を抽出する
 
         太字マークダウン記法、カンマ区切り、単位を除去してfloatに変換する。
-        変換できない場合は0.0を返す。
+        変換できない場合は警告を出力して0.0を返す。
         """
         # **太字**を除去
         cleaned = BOLD_PATTERN.sub(r'\1', text).strip()
@@ -908,7 +908,11 @@ class SlidesMarkdownParser:
             try:
                 return float(m.group(0))
             except ValueError:
+                logger.warning(f"数値の変換に失敗しました。0として処理します: '{text}'")
                 return 0.0
+        # 数値が見つからない場合
+        if cleaned and cleaned != '0':
+            logger.warning(f"数値の変換に失敗しました。0として処理します: '{text}'")
         return 0.0
 
 

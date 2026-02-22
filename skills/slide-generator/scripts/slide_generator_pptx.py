@@ -1764,11 +1764,23 @@ def generate_presentation(markdown_path: str, config: DesignConfig,
         生成されたPPTXファイルのパス
     """
     # 1. slides.mdをパース
-    with open(markdown_path, encoding="utf-8") as f:
-        markdown_text = f.read()
+    try:
+        with open(markdown_path, encoding="utf-8") as f:
+            markdown_text = f.read()
+    except FileNotFoundError:
+        print(f"エラー: ファイルが見つかりません: {markdown_path}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
+        print(f"エラー: ファイルの読み込みに失敗しました: {e}", file=sys.stderr)
+        sys.exit(1)
 
     parser = SlidesMarkdownParser()
     presentation_data = parser.parse(markdown_text)
+
+    # スライドが0件の場合はエラー
+    if not presentation_data.slides:
+        print("エラー: スライドが見つかりません", file=sys.stderr)
+        sys.exit(1)
 
     # 2. Presentationオブジェクト生成
     prs = create_presentation(config, template_path)
@@ -1851,6 +1863,10 @@ def main():
         default_config = script_dir.parent / "config.json"
         if default_config.exists():
             config_path = str(default_config)
+    elif not os.path.exists(config_path):
+        # 明示的に指定されたconfig.jsonが存在しない場合はエラー
+        print(f"エラー: 設定ファイルが見つかりません: {config_path}", file=sys.stderr)
+        sys.exit(1)
 
     # DesignConfigの読み込み
     config = DesignConfig(config_path)

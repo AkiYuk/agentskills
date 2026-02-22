@@ -240,6 +240,71 @@ class BaseRenderer:
         shape.line.fill.background()
         return shape
 
+    def add_vertical_line(self, slide, left, top, height,
+                          color: str = "#CCCCCC", thickness: float = 1.0):
+        """縦線を描画（細い矩形として実装）"""
+        shape = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE,
+            left, top, Pt(thickness), height
+        )
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = RGBColor.from_string(color.lstrip("#"))
+        shape.line.fill.background()
+        return shape
+
+    def _render_columns(self, slide, columns_data: list, config: DesignConfig,
+                        gutter: float, header_font_size=Pt(14),
+                        body_font_size=Pt(12)):
+        """カラムレイアウト共通の描画処理
+
+        Args:
+            slide: スライドオブジェクト
+            columns_data: カラムデータのリスト（各要素は heading, body キーを持つdict）
+            config: デザイン設定
+            gutter: カラム間のガター幅（Inches）
+            header_font_size: ヘッダーのフォントサイズ
+            body_font_size: 本文のフォントサイズ
+        """
+        num_cols = len(columns_data)
+        col_width = (self.CONTENT_WIDTH - gutter * (num_cols - 1)) / num_cols
+
+        for i, col_data in enumerate(columns_data):
+            col_left = Inches(self.CONTENT_LEFT + i * (col_width + gutter))
+            # ヘッダー描画
+            self.add_text_box(
+                slide,
+                left=col_left,
+                top=Inches(self.CONTENT_TOP),
+                width=Inches(col_width),
+                height=Inches(0.4),
+                text=col_data.get("heading", ""),
+                font_size=header_font_size,
+                font_color=config.primary_color,
+                bold=True,
+                font_family=config.font_family,
+            )
+            # ヘッダー下の装飾線
+            self.add_horizontal_line(
+                slide,
+                left=col_left,
+                top=Inches(self.CONTENT_TOP + 0.45),
+                width=Inches(col_width),
+                color=config.accent_color,
+                thickness=2.0,
+            )
+            # 本文描画
+            self.add_text_box(
+                slide,
+                left=col_left,
+                top=Inches(self.CONTENT_TOP + 0.55),
+                width=Inches(col_width),
+                height=Inches(self.CONTENT_HEIGHT - 0.55),
+                text=col_data.get("body", ""),
+                font_size=body_font_size,
+                font_color=config.text_primary,
+                font_family=config.font_family,
+            )
+
     def set_font(self, text_frame, font_family: str = "Meiryo UI",
                  font_size=None, font_color: str = None,
                  bold: bool = None, italic: bool = None,
@@ -628,6 +693,513 @@ class CtaRenderer(BaseRenderer):
 
 
 # ====================================================================
+# TwoColumnRenderer
+# ====================================================================
+
+class TwoColumnRenderer(BaseRenderer):
+    """2カラムレイアウトRenderer
+
+    コンテンツ領域を左右均等に2分割し、各カラムにヘッダーと本文を配置する。
+    カラム間には縦の区切り線を表示する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """2カラムスライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトルとキーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        # カラム描画
+        columns = slide_data.columns or []
+        if not columns:
+            return
+
+        gutter = 0.3
+        self._render_columns(slide, columns, config, gutter=gutter,
+                             header_font_size=Pt(14), body_font_size=Pt(12))
+
+        # カラム間の縦区切り線
+        col_width = (self.CONTENT_WIDTH - gutter) / 2
+        line_left = Inches(self.CONTENT_LEFT + col_width + gutter / 2)
+        self.add_vertical_line(
+            slide,
+            left=line_left,
+            top=Inches(self.CONTENT_TOP),
+            height=Inches(self.CONTENT_HEIGHT),
+            color="#CCCCCC",
+        )
+
+
+# ====================================================================
+# ThreeColumnRenderer
+# ====================================================================
+
+class ThreeColumnRenderer(BaseRenderer):
+    """3カラムレイアウトRenderer
+
+    コンテンツ領域を3等分し、各カラムにヘッダーと本文を配置する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """3カラムスライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトルとキーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        # カラム描画
+        columns = slide_data.columns or []
+        if not columns:
+            return
+
+        self._render_columns(slide, columns, config, gutter=0.25,
+                             header_font_size=Pt(14), body_font_size=Pt(12))
+
+
+# ====================================================================
+# FourColumnRenderer
+# ====================================================================
+
+class FourColumnRenderer(BaseRenderer):
+    """4カラムレイアウトRenderer
+
+    コンテンツ領域を4等分し、各カラムにヘッダーと本文を配置する。
+    フォントサイズをやや小さくしてスペースを確保する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """4カラムスライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトルとキーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        # カラム描画（フォントサイズ小さめ）
+        columns = slide_data.columns or []
+        if not columns:
+            return
+
+        self._render_columns(slide, columns, config, gutter=0.2,
+                             header_font_size=Pt(12), body_font_size=Pt(11))
+
+
+# ====================================================================
+# MetricsRenderer
+# ====================================================================
+
+class MetricsRenderer(BaseRenderer):
+    """数値・KPIレイアウトRenderer
+
+    2〜4個の数値カードを横並びで均等配置し、カード間に縦区切り線を表示する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """メトリクススライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトルとキーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        metrics = slide_data.items or []
+        num = len(metrics)
+        if num < 2:
+            num = 2
+        if num > 4:
+            num = 4
+
+        # ガターとカード幅の計算
+        gutter = {2: 0.3, 3: 0.25, 4: 0.2}.get(num, 0.25)
+        card_width = (self.CONTENT_WIDTH - gutter * (num - 1)) / num
+
+        for i, metric in enumerate(metrics[:4]):
+            card_left = Inches(self.CONTENT_LEFT + i * (card_width + gutter))
+            # 数値
+            self.add_text_box(
+                slide,
+                left=card_left,
+                top=Inches(2.5),
+                width=Inches(card_width),
+                height=Inches(1.2),
+                text=metric.get("value", ""),
+                font_size=Pt(36),
+                font_color=config.accent_color,
+                bold=True,
+                alignment=PP_ALIGN.CENTER,
+                font_family=config.font_family,
+            )
+            # ラベル
+            self.add_text_box(
+                slide,
+                left=card_left,
+                top=Inches(3.8),
+                width=Inches(card_width),
+                height=Inches(0.5),
+                text=metric.get("label", ""),
+                font_size=Pt(12),
+                font_color=config.text_secondary,
+                alignment=PP_ALIGN.CENTER,
+                font_family=config.font_family,
+            )
+            # カード間区切り線（最後のカード以外）
+            if i < num - 1:
+                line_left = Inches(
+                    self.CONTENT_LEFT + (i + 1) * card_width + i * gutter + gutter / 2
+                )
+                self.add_vertical_line(
+                    slide,
+                    left=line_left,
+                    top=Inches(2.2),
+                    height=Inches(2.5),
+                    color="#CCCCCC",
+                )
+
+
+# ====================================================================
+# ComparisonTableRenderer
+# ====================================================================
+
+class ComparisonTableRenderer(BaseRenderer):
+    """比較表レイアウトRenderer
+
+    python-pptxのadd_table APIでテーブルを描画する。
+    ヘッダー行は紺色背景・白文字、データ行は交互背景色。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """比較表スライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトルとキーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        table_data = slide_data.table or []
+        if not table_data or len(table_data) < 2:
+            return
+
+        headers = table_data[0]
+        rows = table_data[1:]
+        num_rows = len(rows) + 1  # ヘッダー含む
+        num_cols = len(headers)
+
+        # テーブル作成
+        table_height = Inches(0.5 + 0.45 * len(rows))
+        table_shape = slide.shapes.add_table(
+            num_rows, num_cols,
+            left=Inches(self.CONTENT_LEFT),
+            top=Inches(self.CONTENT_TOP),
+            width=Inches(self.CONTENT_WIDTH),
+            height=table_height,
+        )
+        table = table_shape.table
+
+        # ヘッダー行のスタイル設定
+        for col_idx, header_text in enumerate(headers):
+            cell = table.cell(0, col_idx)
+            cell.text = header_text
+            # 背景色: primary
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = RGBColor.from_string(
+                config.primary_color.lstrip("#"))
+            # フォント
+            for paragraph in cell.text_frame.paragraphs:
+                paragraph.font.size = Pt(12)
+                paragraph.font.bold = True
+                paragraph.font.color.rgb = RGBColor.from_string("FFFFFF")
+                paragraph.font.name = config.font_family
+                paragraph.alignment = PP_ALIGN.CENTER
+            # セル余白
+            cell.margin_left = Inches(0.05)
+            cell.margin_right = Inches(0.05)
+            cell.margin_top = Inches(0.05)
+            cell.margin_bottom = Inches(0.05)
+
+        # データ行のスタイル設定
+        for row_idx, row_data in enumerate(rows):
+            # 0始まりで偶数行が白、奇数行がグレー
+            is_even_row = (row_idx % 2 == 1)
+            bg_color = config.bg_secondary if is_even_row else config.bg_primary
+
+            for col_idx, cell_text in enumerate(row_data):
+                if col_idx >= num_cols:
+                    break
+                cell = table.cell(row_idx + 1, col_idx)
+                # 太字ラベル（**text**）の検出
+                is_bold_label = cell_text.startswith("**") and cell_text.endswith("**")
+                if is_bold_label:
+                    cell_text = cell_text[2:-2]
+                cell.text = cell_text
+                # 背景色
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = RGBColor.from_string(bg_color.lstrip("#"))
+                # フォント
+                for paragraph in cell.text_frame.paragraphs:
+                    paragraph.font.size = Pt(11)
+                    paragraph.font.name = config.font_family
+                    if is_bold_label:
+                        paragraph.font.bold = True
+                        paragraph.font.color.rgb = RGBColor.from_string(
+                            config.accent_color.lstrip("#"))
+                    else:
+                        paragraph.font.color.rgb = RGBColor.from_string(
+                            config.text_primary.lstrip("#"))
+                # セル余白
+                cell.margin_left = Inches(0.05)
+                cell.margin_right = Inches(0.05)
+                cell.margin_top = Inches(0.05)
+                cell.margin_bottom = Inches(0.05)
+
+
+# ====================================================================
+# FaqRenderer
+# ====================================================================
+
+class FaqRenderer(BaseRenderer):
+    """Q&AレイアウトRenderer
+
+    質問と回答のペアを縦並びで表示し、ペア間に水平区切り線を配置する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """Q&Aスライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトル
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+
+        faq_items = slide_data.faq_items or []
+        num_pairs = min(len(faq_items), 3)
+        if num_pairs == 0:
+            return
+        pair_height = self.CONTENT_HEIGHT / max(num_pairs, 1)
+
+        for i, item in enumerate(faq_items[:3]):
+            pair_top = self.CONTENT_TOP + i * pair_height
+
+            # 質問
+            self.add_text_box(
+                slide,
+                left=Inches(self.CONTENT_LEFT),
+                top=Inches(pair_top),
+                width=Inches(self.CONTENT_WIDTH),
+                height=Inches(0.5),
+                text=f"Q.  {item.get('question', '')}",
+                font_size=Pt(14),
+                font_color=config.primary_color,
+                bold=True,
+                font_family=config.font_family,
+            )
+
+            # 回答
+            self.add_text_box(
+                slide,
+                left=Inches(self.CONTENT_LEFT),
+                top=Inches(pair_top + 0.55),
+                width=Inches(self.CONTENT_WIDTH),
+                height=Inches(pair_height - 0.75),
+                text=f"A.  {item.get('answer', '')}",
+                font_size=Pt(12),
+                font_color=config.text_primary,
+                font_family=config.font_family,
+            )
+
+            # 区切り線（最終ペア以外）
+            if i < num_pairs - 1:
+                self.add_horizontal_line(
+                    slide,
+                    left=Inches(self.CONTENT_LEFT),
+                    top=Inches(pair_top + pair_height - 0.15),
+                    width=Inches(self.CONTENT_WIDTH),
+                    color="#CCCCCC",
+                )
+
+
+# ====================================================================
+# QuoteRenderer
+# ====================================================================
+
+class QuoteRenderer(BaseRenderer):
+    """引用レイアウトRenderer
+
+    左側にaccent色の縦装飾バーを配置し、引用文をitalicで表示する。
+    著者名は右寄せで表示する。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """引用スライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトル
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+
+        quote_text = slide_data.quote or ""
+        author = slide_data.quote_author or ""
+
+        # accent色の装飾バー（縦線）
+        self.add_shape(
+            slide,
+            MSO_SHAPE.RECTANGLE,
+            left=Inches(1.0),
+            top=Inches(1.8),
+            width=Inches(0.06),
+            height=Inches(2.5),
+            fill_color=config.accent_color,
+        )
+
+        # 引用文
+        self.add_text_box(
+            slide,
+            left=Inches(1.4),
+            top=Inches(1.8),
+            width=Inches(10.933),
+            height=Inches(2.5),
+            text=quote_text,
+            font_size=Pt(16),
+            font_color=config.text_primary,
+            italic=True,
+            font_family=config.font_family,
+        )
+
+        # 著者名
+        if author:
+            self.add_text_box(
+                slide,
+                left=Inches(1.4),
+                top=Inches(4.5),
+                width=Inches(10.933),
+                height=Inches(0.5),
+                text=f"-- {author}",
+                font_size=Pt(12),
+                font_color=config.text_secondary,
+                alignment=PP_ALIGN.RIGHT,
+                font_family=config.font_family,
+            )
+
+
+# ====================================================================
+# ImageWithTextRenderer
+# ====================================================================
+
+class ImageWithTextRenderer(BaseRenderer):
+    """画像+テキストレイアウトRenderer
+
+    左半分に画像、右半分にテキスト説明を配置する。
+    画像はアスペクト比を維持してフィットさせる。
+    """
+
+    def render(self, slide, slide_data: SlideContent, config: DesignConfig):
+        """画像+テキストスライドを描画"""
+        # 背景: 白色
+        self.set_background_color(slide, config.bg_primary)
+
+        # スライドタイトルとキーメッセージ
+        if slide_data.title:
+            self._render_slide_title(slide, slide_data.title, config)
+        if slide_data.subtitle:
+            self._render_key_message(slide, slide_data.subtitle, config)
+
+        image_path = slide_data.image_path or ""
+        description = slide_data.body or ""
+
+        # 画像エリアとテキストエリアのサイズ
+        area_gutter = 0.4
+        area_width = (self.CONTENT_WIDTH - area_gutter) / 2  # 5.967in
+
+        img_left = Inches(self.CONTENT_LEFT)
+        img_top = Inches(self.CONTENT_TOP)
+        img_area_width = Inches(area_width)
+        img_area_height = Inches(self.CONTENT_HEIGHT)
+
+        if image_path and os.path.exists(image_path):
+            # アスペクト比を維持してフィット
+            try:
+                from PIL import Image
+                with Image.open(image_path) as img:
+                    img_w, img_h = img.size
+                aspect = img_w / img_h
+                target_aspect = area_width / self.CONTENT_HEIGHT
+
+                if aspect > target_aspect:
+                    # 横長: 幅に合わせ、高さを調整
+                    actual_width = img_area_width
+                    actual_height = Inches(area_width / aspect)
+                    actual_top = img_top + (img_area_height - actual_height) // 2
+                    actual_left = img_left
+                else:
+                    # 縦長: 高さに合わせ、幅を調整
+                    actual_height = img_area_height
+                    actual_width = Inches(self.CONTENT_HEIGHT * aspect)
+                    actual_left = img_left + (img_area_width - actual_width) // 2
+                    actual_top = img_top
+
+                slide.shapes.add_picture(
+                    image_path, actual_left, actual_top,
+                    actual_width, actual_height
+                )
+            except ImportError:
+                # PILがない場合は固定サイズで配置
+                slide.shapes.add_picture(
+                    image_path, img_left, img_top,
+                    img_area_width, img_area_height
+                )
+        else:
+            # 画像なし: placeholder.pngを使用
+            placeholder_path = os.path.join(
+                os.path.dirname(__file__), "..", "assets", "placeholder.png"
+            )
+            if os.path.exists(placeholder_path):
+                slide.shapes.add_picture(
+                    placeholder_path, img_left, img_top,
+                    img_area_width, img_area_height
+                )
+            else:
+                # プレースホルダー画像もない場合はグレー矩形で代替
+                self.add_shape(
+                    slide, MSO_SHAPE.RECTANGLE,
+                    img_left, img_top, img_area_width, img_area_height,
+                    fill_color="#E0E0E0",
+                )
+
+        # テキスト説明（右半分）
+        text_left = Inches(self.CONTENT_LEFT + area_width + area_gutter)
+        self.add_text_box(
+            slide,
+            left=text_left,
+            top=Inches(self.CONTENT_TOP),
+            width=Inches(area_width),
+            height=Inches(self.CONTENT_HEIGHT),
+            text=description,
+            font_size=Pt(12),
+            font_color=config.text_primary,
+            font_family=config.font_family,
+        )
+
+
+# ====================================================================
 # RENDERER_MAP
 # ====================================================================
 
@@ -638,6 +1210,14 @@ RENDERER_MAP = {
     "bullet_points": BulletPointsRenderer,
     "numbered_list": NumberedListRenderer,
     "cta": CtaRenderer,
+    "two_column": TwoColumnRenderer,
+    "three_column": ThreeColumnRenderer,
+    "four_column": FourColumnRenderer,
+    "metrics": MetricsRenderer,
+    "comparison_table": ComparisonTableRenderer,
+    "faq": FaqRenderer,
+    "quote": QuoteRenderer,
+    "image_with_text": ImageWithTextRenderer,
 }
 
 
